@@ -129,6 +129,24 @@ void SnakeGame::Update()
 
     }
 
+    if (player[0].pos.x == fruit.pos.x && player[0].pos.y == fruit.pos.y)
+    {
+        fruit.active = false;
+        growNextMove = true;
+        autoPath.clear();
+        debugPath.clear();
+    }
+
+    if (player[0].pos.x == specialFruit.pos.x && player[0].pos.y == specialFruit.pos.y)
+    {
+        specialFruit.active = false;
+        autoPlay = true;
+        autoPlayTimer = 10.0f;
+        autoPath.clear();
+        debugPath.clear();
+    }
+
+
 }
 
 void SnakeGame::Draw()
@@ -153,15 +171,17 @@ void SnakeGame::Draw()
         DrawLine(borderGap.x / 2, y, screenW - borderGap.x / 2, y, BLACK);
     }
 
+    // Draw A* path (stable)
     if (autoPlay)
     {
-        int timeLeft = (int)ceilf(autoPlayTimer);
-        DrawText(TextFormat("%d", timeLeft), 10, 10, 40, YELLOW);
+        for (auto& c : debugPath)
+        {
+            Vector2 p = CellToWorld(c);
+            DrawRectangle(p.x, p.y, tile_size, tile_size, Fade(YELLOW, 0.35f));
+        }
     }
 
     // Draw snake
-    //for (auto& p : player)
-    //    p.Draw();
     for (auto& p : player)
     {
         if (autoPlay)
@@ -170,8 +190,6 @@ void SnakeGame::Draw()
             DrawRectangleV(p.pos, { tile_size, tile_size }, p.color);
     }
 
-
-    // Draw fruits
     fruit.Draw();
     specialFruit.Draw();
 }
@@ -219,33 +237,54 @@ void SnakeGame::Interaction()
 // replace with an alg later so that it can go around walls
 void SnakeGame::AutoMove()
 {
-    // Convert head + fruit to grid cells
+
+
     Cell headCell = WorldToCell(player[0].pos);
     Cell fruitCell = WorldToCell(fruit.pos);
 
-    // If no path, compute one
-    if (autoPath.empty())
+    // If the next expected cell is NOT the next in the path → recompute
+    if (!autoPath.empty())
     {
-        std::vector<Cell> path;
-        if (FindPathAStar(headCell, fruitCell, path))
+        Cell expected = autoPath.front();
+        Cell actual = headCell;
+
+        // If head is NOT where we expect it to be relative to the path
+        if (!(expected.x == actual.x || expected.y == actual.y))
         {
-            autoPath = path;
-        }
-        else
-        {
-            // No path found — do nothing
-            return;
+            autoPath.clear();
+            debugPath.clear();
         }
     }
 
-    // SAFETY CHECK: path might still be empty
+
+    // Compute path if needed
+    if (autoPath.empty())
+    {
+        // Only recompute if we are NOT already on the goal
+        if (!(headCell.x == fruitCell.x && headCell.y == fruitCell.y))
+        {
+            std::vector<Cell> path;
+            if (FindPathAStar(headCell, fruitCell, path))
+            {
+                autoPath = path;
+                debugPath = path;
+            }
+            else
+            {
+                return;
+            }
+        }
+    }
+
+
     if (autoPath.empty())
         return;
 
-    // Take next step
+    // Next step
     Cell next = autoPath.front();
     autoPath.erase(autoPath.begin());
 
+    // Validate adjacency (prevent diagonal)
     int dx = next.x - headCell.x;
     int dy = next.y - headCell.y;
 
@@ -255,26 +294,17 @@ void SnakeGame::AutoMove()
 
     if (!validStep)
     {
-        // Path is invalid — clear and recompute next frame
         autoPath.clear();
+        debugPath.clear();
         return;
     }
 
+    // Convert to world direction
     Vector2 nextWorld = CellToWorld(next);
     Vector2 headWorld = player[0].pos;
 
     Vector2 dir = { nextWorld.x - headWorld.x, nextWorld.y - headWorld.y };
 
-    // Validate direction: must be exactly 1 tile step
-    if (fabs(dir.x) > tile_size || fabs(dir.y) > tile_size)
-    {
-        // Path is invalid — clear and recompute next frame
-        autoPath.clear();
-        return;
-    }
-
-
-    // Apply direction
     speed = dir;
     canMove = false;
 }

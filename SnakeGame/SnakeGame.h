@@ -7,8 +7,8 @@
 #include <vector>
 
 #define TILE_SIZE 40
-#define SCREEN_W 800
-#define SCREEN_H 800
+#define SCREEN_W 720
+#define SCREEN_H 1280
 
 struct Piece
 {
@@ -112,5 +112,7 @@ public:
 
 	// A* path storage
 	std::vector<Cell> autoPath;
+	std::vector<Cell> debugPath;   // for visualization only
+
 
 };
