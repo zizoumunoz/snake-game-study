@@ -114,11 +114,9 @@ void SnakeGame::Update()
     {
         fruit.active = false;
         growNextMove = true;
-        
-
-        
-
+        autoPath.clear(); //  for next fruit
     }
+
 
     // Eat special fruit
     if (player[0].pos.x == specialFruit.pos.x && player[0].pos.y == specialFruit.pos.y)
@@ -127,6 +125,8 @@ void SnakeGame::Update()
 
         autoPlay = true;
         autoPlayTimer = 10.0f;   // 10 seconds of autopilot
+        autoPath.clear();
+
     }
 
 }
@@ -219,89 +219,64 @@ void SnakeGame::Interaction()
 // replace with an alg later so that it can go around walls
 void SnakeGame::AutoMove()
 {
-    Vector2 head = player[0].pos;
+    // Convert head + fruit to grid cells
+    Cell headCell = WorldToCell(player[0].pos);
+    Cell fruitCell = WorldToCell(fruit.pos);
 
-    // Candidate moves
-    Vector2 right = { head.x + tile_size, head.y };
-    Vector2 left = { head.x - tile_size, head.y };
-    Vector2 down = { head.x, head.y + tile_size };
-    Vector2 up = { head.x, head.y - tile_size };
-
-    // -----------------------------
-    // 1. GREEDY TOWARD FRUIT
-    //    (allow continuing straight, block reversing)
-    // -----------------------------
-
-    // Fruit to the right
-    if (fruit.pos.x > head.x && speed.x >= 0 && IsTileSafe(right))
+    // If no path, compute one
+    if (autoPath.empty())
     {
-        speed = { tile_size, 0 };
-        canMove = false;
+        std::vector<Cell> path;
+        if (FindPathAStar(headCell, fruitCell, path))
+        {
+            autoPath = path;
+        }
+        else
+        {
+            // No path found — do nothing
+            return;
+        }
+    }
+
+    // SAFETY CHECK: path might still be empty
+    if (autoPath.empty())
+        return;
+
+    // Take next step
+    Cell next = autoPath.front();
+    autoPath.erase(autoPath.begin());
+
+    int dx = next.x - headCell.x;
+    int dy = next.y - headCell.y;
+
+    bool validStep =
+        (abs(dx) == 1 && dy == 0) ||
+        (abs(dy) == 1 && dx == 0);
+
+    if (!validStep)
+    {
+        // Path is invalid — clear and recompute next frame
+        autoPath.clear();
         return;
     }
 
-    // Fruit to the left
-    if (fruit.pos.x < head.x && speed.x <= 0 && IsTileSafe(left))
+    Vector2 nextWorld = CellToWorld(next);
+    Vector2 headWorld = player[0].pos;
+
+    Vector2 dir = { nextWorld.x - headWorld.x, nextWorld.y - headWorld.y };
+
+    // Validate direction: must be exactly 1 tile step
+    if (fabs(dir.x) > tile_size || fabs(dir.y) > tile_size)
     {
-        speed = { -tile_size, 0 };
-        canMove = false;
+        // Path is invalid — clear and recompute next frame
+        autoPath.clear();
         return;
     }
 
-    // Fruit below
-    if (fruit.pos.y > head.y && speed.y >= 0 && IsTileSafe(down))
-    {
-        speed = { 0, tile_size };
-        canMove = false;
-        return;
-    }
 
-    // Fruit above
-    if (fruit.pos.y < head.y && speed.y <= 0 && IsTileSafe(up))
-    {
-        speed = { 0, -tile_size };
-        canMove = false;
-        return;
-    }
-
-    // -----------------------------
-    // 2. FALLBACK: ANY SAFE MOVE
-    //    (block only reverse direction)
-    // -----------------------------
-
-    // Right (allowed unless moving left)
-    if (IsTileSafe(right) && speed.x >= 0)
-    {
-        speed = { tile_size, 0 };
-        canMove = false;
-        return;
-    }
-
-    // Left (allowed unless moving right)
-    if (IsTileSafe(left) && speed.x <= 0)
-    {
-        speed = { -tile_size, 0 };
-        canMove = false;
-        return;
-    }
-
-    // Down (allowed unless moving up)
-    if (IsTileSafe(down) && speed.y >= 0)
-    {
-        speed = { 0, tile_size };
-        canMove = false;
-        return;
-    }
-
-    // Up (allowed unless moving down)
-    if (IsTileSafe(up) && speed.y <= 0)
-    {
-        speed = { 0, -tile_size };
-        canMove = false;
-        return;
-    }
-
-    // If absolutely no safe move exists, do nothing.
+    // Apply direction
+    speed = dir;
+    canMove = false;
 }
 
 bool SnakeGame::IsTileSafe(Vector2 tile)
@@ -321,4 +296,123 @@ bool SnakeGame::IsTileSafe(Vector2 tile)
     return true;
 }
 
+Cell SnakeGame::WorldToCell(Vector2 pos)
+{
+    Cell c;
+    c.x = (int)((pos.x - borderGap.x / 2) / tile_size);
+    c.y = (int)((pos.y - borderGap.y / 2) / tile_size);
+    return c;
+}
 
+Vector2 SnakeGame::CellToWorld(Cell c)
+{
+    Vector2 pos;
+    pos.x = borderGap.x / 2 + c.x * tile_size;
+    pos.y = borderGap.y / 2 + c.y * tile_size;
+    return pos;
+}
+
+int SnakeGame::GetCols()
+{
+    return (screenW - (int)borderGap.x) / (int)tile_size;
+}
+
+int SnakeGame::GetRows()
+{
+    return (screenH - (int)borderGap.y) / (int)tile_size;
+}
+
+bool SnakeGame::IsCellSafe(const Cell& c)
+{
+    // bounds
+    if (c.x < 0 || c.x >= GetCols() || c.y < 0 || c.y >= GetRows())
+        return false;
+
+    Vector2 world = CellToWorld(c);
+
+    // body collision (skip head)
+    for (int i = 1; i < player.size(); i++)
+        if (player[i].pos.x == world.x && player[i].pos.y == world.y)
+            return false;
+
+    return true;
+}
+
+bool SnakeGame::FindPathAStar(const Cell& start, const Cell& goal, std::vector<Cell>& outPath)
+{
+    outPath.clear();
+
+    struct Node
+    {
+        Cell cell;
+        float f;
+        float g;
+    };
+
+    auto cmp = [](const Node& a, const Node& b) { return a.f > b.f; };
+    std::priority_queue<Node, std::vector<Node>, decltype(cmp)> open(cmp);
+
+    std::unordered_map<Cell, Cell, CellHash> cameFrom;
+    std::unordered_map<Cell, float, CellHash> gScore;
+    std::unordered_map<Cell, bool, CellHash> inOpen;
+
+    auto Heuristic = [](const Cell& a, const Cell& b)
+        {
+            return (float)(abs(a.x - b.x) + abs(a.y - b.y));
+        };
+
+    gScore[start] = 0.0f;
+    open.push({ start, Heuristic(start, goal), 0.0f });
+    inOpen[start] = true;
+
+    while (!open.empty())
+    {
+        Node current = open.top();
+        open.pop();
+        inOpen[current.cell] = false;
+
+        if (current.cell == goal)
+        {
+            Cell c = goal;
+            while (!(c == start))
+            {
+                outPath.push_back(c);
+                c = cameFrom[c];
+            }
+            std::reverse(outPath.begin(), outPath.end());
+            return true;
+        }
+
+        Cell neighbors[4] = {
+            { current.cell.x + 1, current.cell.y },
+            { current.cell.x - 1, current.cell.y },
+            { current.cell.x,     current.cell.y + 1 },
+            { current.cell.x,     current.cell.y - 1 }
+        };
+
+        for (const Cell& nb : neighbors)
+        {
+            if (!IsCellSafe(nb))
+                continue;
+
+            float tentativeG = current.g + 1.0f;
+
+            auto it = gScore.find(nb);
+            if (it == gScore.end() || tentativeG < it->second)
+            {
+                cameFrom[nb] = current.cell;
+                gScore[nb] = tentativeG;
+                float f = tentativeG + Heuristic(nb, goal);
+
+                if (!inOpen[nb])
+                {
+                    open.push({ nb, f, tentativeG });
+                    inOpen[nb] = true;
+                }
+            }
+        }
+
+    }
+
+    return false;
+}
