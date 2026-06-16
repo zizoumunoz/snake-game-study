@@ -170,8 +170,7 @@ void SnakeGame::Draw()
         int y = borderGap.y / 2 + i * tile_size;
         DrawLine(borderGap.x / 2, y, screenW - borderGap.x / 2, y, BLACK);
     }
-
-    // Draw A* path (stable)
+    // a star drawing
     if (autoPlay)
     {
         for (auto& c : debugPath)
@@ -180,6 +179,9 @@ void SnakeGame::Draw()
             DrawRectangle(p.x, p.y, tile_size, tile_size, Fade(YELLOW, 0.35f));
         }
     }
+
+    DrawText(TextFormat("%d", (int)ceilf(autoPlayTimer)), 10, 10, 40, YELLOW);
+
 
     // Draw snake
     for (auto& p : player)
