@@ -115,4 +115,9 @@ public:
 	std::vector<Cell> debugPath;   // for visualization only
 
 
+	// speed adj
+	int moveInterval = 20;   // starting speed
+
+
+
 };
