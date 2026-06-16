@@ -10,6 +10,8 @@ A modern, grid‑based Snake game built in **C++** using **raylib**, featuring:
 - Mobile‑friendly layout options  
 
 This project is both a fun game and a clean reference for implementing A* pathfinding in a tile‑based environment.
+![Gameplay Preview](./snake_astar.gif)
+
 
 ---
 
